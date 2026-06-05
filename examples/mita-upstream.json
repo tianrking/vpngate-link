@@ -1,0 +1,20 @@
+{
+  "egress": {
+    "proxies": [
+      {
+        "name": "edge-relay",
+        "protocol": "SOCKS5_PROXY_PROTOCOL",
+        "host": "127.0.0.1",
+        "port": 19080
+      }
+    ],
+    "rules": [
+      {
+        "ipRanges": ["*"],
+        "domainNames": ["*"],
+        "action": "PROXY",
+        "proxyNames": ["edge-relay"]
+      }
+    ]
+  }
+}

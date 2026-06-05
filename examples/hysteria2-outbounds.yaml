@@ -1,0 +1,5 @@
+outbounds:
+  - name: edge-relay
+    type: socks5
+    socks5:
+      addr: 127.0.0.1:19080
