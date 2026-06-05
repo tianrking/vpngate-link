@@ -298,6 +298,23 @@ async fn do_test_node(state: &AppState, id: &str) -> Option<NodeTestResult> {
         let nodes = state.nodes.read().await;
         nodes.iter().find(|n| n.id == id).cloned()
     }?;
+    if node.proto.eq_ignore_ascii_case("udp") {
+        let test_result = NodeTestResult {
+            id: id.to_string(),
+            ok: false,
+            latency_ms: None,
+            message: "udp preflight is not supported; OpenVPN connect verifies this node"
+                .to_string(),
+        };
+        state
+            .log(
+                "INFO",
+                "test",
+                format!("{}: {}", test_result.id, test_result.message),
+            )
+            .await;
+        return Some(test_result);
+    }
     let started = std::time::Instant::now();
     let target = format!("{}:{}", node.remote_host, node.remote_port);
     let result = timeout(

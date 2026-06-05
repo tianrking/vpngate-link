@@ -258,6 +258,26 @@ VGL_TOKEN=dev-token \
 cargo run
 ```
 
+macOS 或 Windows 本地开发可以验证 API、节点目录解析、React 构建和 relay 监听。真实切换出口 IP 需要 Ubuntu/Linux、OpenVPN、`/dev/net/tun` 和策略路由能力。
+
+### Ubuntu 真机验证
+
+安装到 Ubuntu VPS 后运行：
+
+```bash
+sudo scripts/live-ubuntu-check.sh
+```
+
+这个脚本会把生产路径端到端跑一遍：
+
+1. 读取 `/etc/default/vpngate-link`。
+2. 调用本机控制 API。
+3. 刷新 VPNGate 节点目录。
+4. 通过 `/api/test_nodes` 扫描 TCP 候选节点。
+5. 通过 `/api/connect` 连接第一个可达节点。
+6. 通过 `socks5h://127.0.0.1:19080` 获取公网出口 IP。
+7. 如果 relay 出口 IP 仍然等于 VPS 直连 IP，脚本会失败。
+
 ### 从源码部署到 Ubuntu 服务器
 
 在 Ubuntu VPS 上：

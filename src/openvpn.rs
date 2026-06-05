@@ -44,8 +44,22 @@ pub async fn connect_node(state: &AppState, node_id: &str) -> anyhow::Result<Str
     let config_file = state.cfg.configs_dir().join(format!("{}.conf", node.id));
     tokio::fs::write(&config_file, &node.config_text).await?;
 
-    let mut child = spawn_openvpn(state, &config_file).await?;
-    let stdout = child.stdout.take().context("openvpn stdout not captured")?;
+    let mut child = match spawn_openvpn(state, &config_file).await {
+        Ok(child) => child,
+        Err(err) => {
+            mark_failed(state, &node, err.to_string()).await;
+            return Err(err);
+        }
+    };
+    let stdout = match child.stdout.take() {
+        Some(stdout) => stdout,
+        None => {
+            child.kill().await.ok();
+            let err = anyhow::anyhow!("openvpn stdout not captured");
+            mark_failed(state, &node, err.to_string()).await;
+            return Err(err);
+        }
+    };
     let mut lines = BufReader::new(stdout).lines();
     let deadline = state.cfg.connect_timeout;
     let ready = timeout(deadline, async {

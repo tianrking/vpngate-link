@@ -257,6 +257,26 @@ VGL_TOKEN=dev-token \
 cargo run
 ```
 
+Local macOS or Windows development can verify the API, catalog parsing, React build, and relay listener. A real exit-IP switch requires Ubuntu/Linux with OpenVPN, `/dev/net/tun`, and policy routing.
+
+### Live Ubuntu verification
+
+After installing on an Ubuntu VPS, run:
+
+```bash
+sudo scripts/live-ubuntu-check.sh
+```
+
+The live check performs the production path end to end:
+
+1. Reads `/etc/default/vpngate-link`.
+2. Calls the local control API.
+3. Refreshes the VPNGate catalog.
+4. Scans TCP candidates with `/api/test_nodes`.
+5. Connects the first reachable node with `/api/connect`.
+6. Reads the public IP through `socks5h://127.0.0.1:19080`.
+7. Fails if the relay exit IP is still the same as the direct VPS IP.
+
 ### Deploy from source on an Ubuntu server
 
 On an Ubuntu VPS:

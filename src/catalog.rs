@@ -3,6 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, bail};
 use base64::Engine;
 use csv::StringRecord;
+use reqwest::header::{ACCEPT, CACHE_CONTROL, PRAGMA, USER_AGENT};
+use tokio::process::Command;
 
 use crate::{
     config::Config,
@@ -10,19 +12,60 @@ use crate::{
 };
 
 pub async fn fetch_nodes(cfg: &Config) -> anyhow::Result<Vec<Node>> {
-    let client = reqwest::Client::builder()
-        .user_agent("vpngate-link/0.1")
-        .timeout(std::time::Duration::from_secs(15))
-        .build()?;
-    let text = client
-        .get(&cfg.catalog_url)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
+    let text = fetch_catalog_text(cfg).await?;
 
     parse_catalog_csv(&text, cfg.max_nodes)
+}
+
+async fn fetch_catalog_text(cfg: &Config) -> anyhow::Result<String> {
+    let client = reqwest::Client::builder()
+        .http1_only()
+        .user_agent("Mozilla/5.0 (compatible; VPNGate Link)")
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+    let reqwest_result = match client
+        .get(&cfg.catalog_url)
+        .header(USER_AGENT, "Mozilla/5.0 (compatible; VPNGate Link)")
+        .header(ACCEPT, "text/plain, text/csv, */*")
+        .header(CACHE_CONTROL, "no-cache")
+        .header(PRAGMA, "no-cache")
+        .send()
+        .await
+    {
+        Ok(res) => match res.error_for_status() {
+            Ok(res) => res.text().await,
+            Err(err) => Err(err),
+        },
+        Err(err) => Err(err),
+    };
+
+    match reqwest_result {
+        Ok(text) => Ok(text),
+        Err(reqwest_err) => fetch_catalog_text_with_curl(cfg)
+            .await
+            .with_context(|| format!("reqwest fetch failed first: {reqwest_err}")),
+    }
+}
+
+async fn fetch_catalog_text_with_curl(cfg: &Config) -> anyhow::Result<String> {
+    let output = Command::new("curl")
+        .arg("-fsSL")
+        .arg("--http1.1")
+        .arg("--max-time")
+        .arg("25")
+        .arg("-A")
+        .arg("Mozilla/5.0 (compatible; VPNGate Link)")
+        .arg(&cfg.catalog_url)
+        .output()
+        .await
+        .context("failed to run curl fallback for catalog fetch")?;
+    if !output.status.success() {
+        bail!(
+            "curl fallback failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 pub fn parse_catalog_csv(text: &str, max_nodes: usize) -> anyhow::Result<Vec<Node>> {
