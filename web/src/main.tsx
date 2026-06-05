@@ -13,6 +13,7 @@ import {
   Search,
   Server,
   Shield,
+  SlidersHorizontal,
   Star,
   Terminal,
   Wifi
@@ -105,6 +106,7 @@ function App() {
   const [notice, setNotice] = React.useState("Ready");
   const [exitIp, setExitIp] = React.useState("-");
   const [relayOk, setRelayOk] = React.useState<boolean | null>(null);
+  const [authState, setAuthState] = React.useState<"unknown" | "ok" | "error">("unknown");
 
   const request = React.useCallback(
     async <T,>(path: string, init: RequestInit = {}): Promise<T> => {
@@ -132,10 +134,15 @@ function App() {
     setSettings(settingsData);
     setLogs(logsData.logs.slice(-200).reverse());
     setNotice(statusData.last_message || "Ready");
+    setAuthState("ok");
   }, [request]);
 
   React.useEffect(() => {
-    loadAll().catch((err) => setNotice(err.message));
+    loadAll().catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      setNotice(message);
+      setAuthState(message.toLowerCase().includes("unauthorized") ? "error" : "unknown");
+    });
   }, [loadAll]);
 
   async function run(label: string, fn: () => Promise<void>) {
@@ -214,7 +221,23 @@ function App() {
   function saveToken() {
     localStorage.setItem("vgl_token", token);
     setNotice("Token saved");
-    loadAll().catch((err) => setNotice(err.message));
+    setAuthState("unknown");
+    loadAll().catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      setNotice(message);
+      setAuthState(message.toLowerCase().includes("unauthorized") ? "error" : "unknown");
+    });
+  }
+
+  function resetFilters() {
+    setFilter("");
+    setCountryFilter("all");
+    setProtoFilter("all");
+    setStatusFilter("all");
+    setFavoriteFilter("all");
+    setReachabilityFilter("all");
+    setSortMode("recommended");
+    setNotice("Filters reset");
   }
 
   async function refreshRoutes() {
@@ -328,6 +351,9 @@ function App() {
           </div>
         </div>
         <div className="tokenBox">
+          <span className={`authBadge ${authState}`}>
+            {authState === "ok" ? "Authorized" : authState === "error" ? "Token needed" : "Checking"}
+          </span>
           <input value={token} onChange={(event) => setToken(event.target.value)} type="password" placeholder="Control token" />
           <button onClick={saveToken}><Save size={16} /> Save</button>
         </div>
@@ -342,12 +368,13 @@ function App() {
         </section>
 
         <section className="actions">
-          <button className="primary" onClick={refreshRoutes}><RefreshCw size={16} /> Refresh</button>
-          <button onClick={scanFilteredNodes}><CheckCircle2 size={16} /> Scan Visible</button>
-          <button onClick={autoConnect}><Play size={16} /> Auto</button>
-          <button onClick={checkHealth}><Activity size={16} /> Health</button>
-          <button onClick={checkExitIp}><Wifi size={16} /> Exit IP</button>
-          <button className="danger" onClick={disconnect}><Ban size={16} /> Disconnect</button>
+          <button className="primary" disabled={Boolean(busy)} onClick={refreshRoutes}><RefreshCw size={16} /> Refresh</button>
+          <button disabled={Boolean(busy)} onClick={scanFilteredNodes}><CheckCircle2 size={16} /> Scan Visible</button>
+          <button disabled={Boolean(busy)} onClick={autoConnect}><Play size={16} /> Auto</button>
+          <button disabled={Boolean(busy)} onClick={checkHealth}><Activity size={16} /> Health</button>
+          <button disabled={Boolean(busy)} onClick={checkExitIp}><Wifi size={16} /> Exit IP</button>
+          <button disabled={Boolean(busy)} onClick={resetFilters}><SlidersHorizontal size={16} /> Reset Filters</button>
+          <button className="danger" disabled={Boolean(busy)} onClick={disconnect}><Ban size={16} /> Disconnect</button>
           <div className="search">
             <Search size={16} />
             <input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter country, endpoint, protocol" />
@@ -434,11 +461,16 @@ function App() {
                   </tr>
                 </thead>
                 <tbody>
+                  {filteredNodes.length === 0 && (
+                    <tr>
+                      <td className="emptyCell" colSpan={11}>No routes match the current filters.</td>
+                    </tr>
+                  )}
                   {filteredNodes.map((node) => (
                     <tr key={node.id} className={node.id === status?.active_node_id ? "activeRow" : ""}>
-                      <td><button className="mini" onClick={() => connectNode(node.id)}>Connect</button></td>
+                      <td><button className="mini" disabled={Boolean(busy) || status?.connecting} onClick={() => connectNode(node.id)}>Connect</button></td>
                       <td>
-                        <button className={favorites.has(node.id) ? "star on" : "star"} onClick={() => toggleFavorite(node.id)}>
+                        <button className={favorites.has(node.id) ? "star on" : "star"} disabled={Boolean(busy)} onClick={() => toggleFavorite(node.id)}>
                           <Star size={16} fill={favorites.has(node.id) ? "currentColor" : "none"} />
                         </button>
                       </td>
@@ -450,7 +482,7 @@ function App() {
                       <td>{node.score}</td>
                       <td>{formatSpeed(node.speed)}</td>
                       <td>{node.sessions}</td>
-                      <td><button className="mini ghost" onClick={() => testNode(node.id)}>TCP</button></td>
+                      <td><button className="mini ghost" disabled={Boolean(busy)} onClick={() => testNode(node.id)}>TCP</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -482,7 +514,7 @@ function App() {
               </Field>
               <label className="check"><input type="checkbox" checked={settings.connection_enabled} onChange={(event) => setSettings({ ...settings, connection_enabled: event.target.checked })} /> Enable auto connection</label>
               <label className="check"><input type="checkbox" checked={settings.fallback_to_any} onChange={(event) => setSettings({ ...settings, fallback_to_any: event.target.checked })} /> Fallback from favorites</label>
-              <button className="primary wide" onClick={saveSettings}><Save size={16} /> Apply Settings</button>
+              <button className="primary wide" disabled={Boolean(busy)} onClick={saveSettings}><Save size={16} /> Apply Settings</button>
             </div>
 
             <div className="panel logs">

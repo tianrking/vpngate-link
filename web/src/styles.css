@@ -42,6 +42,11 @@ button {
 
 button:hover { border-color: #9aa8b6; }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 button.primary {
   color: #fff;
   background: var(--teal);
@@ -108,6 +113,31 @@ code {
 
 .tokenBox input {
   width: 280px;
+}
+
+.authBadge {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px;
+  color: #d7e3ec;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.authBadge.ok {
+  border-color: rgba(16, 185, 129, 0.42);
+  color: #a7f3d0;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.authBadge.error {
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #fecaca;
+  background: rgba(248, 113, 113, 0.12);
 }
 
 .main {
@@ -445,6 +475,12 @@ td code {
   margin: 10px 4px;
 }
 
+.emptyCell {
+  height: 96px;
+  color: var(--muted);
+  text-align: center;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -466,6 +502,10 @@ td code {
   .tokenBox {
     align-items: stretch;
     flex-direction: column;
+  }
+  .authBadge {
+    justify-content: center;
+    width: 100%;
   }
   .tokenBox input {
     width: 100%;
