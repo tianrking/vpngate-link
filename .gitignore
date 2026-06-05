@@ -1,6 +1,48 @@
+# Rust
 /target/
-/gateway_data/
+
+# Frontend
 /web/node_modules/
 /web/dist/
 /web/tsconfig.tsbuildinfo
+/web/.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local runtime data
+/gateway_data/
+/vpngate-link-data/
+/data/
+/configs/
+/nodes.json
+/settings.json
+/state.json
+/openvpn_auth.txt
+
+# Local configuration and secrets
+/.env
+/.env.*
+/vpngate-link.env
+*.local
+
+# Release artifacts
+*.deb
+*.rpm
+*.tar.gz
+*.tgz
+*.zip
+
+# Logs and process files
 *.log
+*.pid
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
