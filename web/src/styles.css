@@ -176,6 +176,10 @@ code {
   margin-bottom: 14px;
 }
 
+.actions button {
+  flex: 0 0 auto;
+}
+
 .search {
   flex: 1;
   min-width: 260px;
@@ -195,6 +199,26 @@ code {
   height: 32px;
   border: 0;
   padding: 0;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(132px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.filters .field {
+  padding: 0;
+}
+
+.filters input,
+.filters select {
+  min-width: 0;
 }
 
 .workspace {
@@ -255,7 +279,7 @@ code {
 
 table {
   width: 100%;
-  min-width: 1080px;
+  min-width: 1160px;
   border-collapse: collapse;
 }
 
@@ -281,6 +305,14 @@ td span, td small {
   color: var(--muted);
   font-size: 12px;
   max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+td code {
+  display: block;
+  max-width: 240px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -421,6 +453,9 @@ td span, td small {
   .metrics, .workspace {
     grid-template-columns: 1fr;
   }
+  .filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 720px) {
@@ -437,5 +472,11 @@ td span, td small {
   }
   .main {
     padding: 12px;
+  }
+  .filters {
+    grid-template-columns: 1fr;
+  }
+  .search {
+    min-width: 100%;
   }
 }

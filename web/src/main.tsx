@@ -5,7 +5,6 @@ import {
   Ban,
   CheckCircle2,
   Gauge,
-  Heart,
   Loader2,
   Play,
   RefreshCw,
@@ -68,6 +67,17 @@ type LogEntry = {
   message: string;
 };
 
+type NodeTestResult = {
+  id: string;
+  ok: boolean;
+  latency_ms: number | null;
+  message: string;
+};
+
+type SortMode = "recommended" | "latency" | "score" | "speed" | "sessions" | "country";
+type FavoriteFilter = "all" | "favorites" | "plain";
+type ReachabilityFilter = "all" | "reachable" | "untested" | "failed" | "fast";
+
 const emptySettings: Settings = {
   connection_enabled: true,
   route_mode: "auto",
@@ -84,6 +94,13 @@ function App() {
   const [nodes, setNodes] = React.useState<Node[]>([]);
   const [logs, setLogs] = React.useState<LogEntry[]>([]);
   const [filter, setFilter] = React.useState("");
+  const [countryFilter, setCountryFilter] = React.useState("all");
+  const [protoFilter, setProtoFilter] = React.useState("all");
+  const [statusFilter, setStatusFilter] = React.useState<NodeStatus | "all">("all");
+  const [favoriteFilter, setFavoriteFilter] = React.useState<FavoriteFilter>("all");
+  const [reachabilityFilter, setReachabilityFilter] = React.useState<ReachabilityFilter>("all");
+  const [sortMode, setSortMode] = React.useState<SortMode>("recommended");
+  const [scanLimit, setScanLimit] = React.useState(40);
   const [busy, setBusy] = React.useState("");
   const [notice, setNotice] = React.useState("Ready");
   const [exitIp, setExitIp] = React.useState("-");
@@ -134,13 +151,65 @@ function App() {
 
   const favorites = new Set(settings.favorite_node_ids);
   const activeNode = nodes.find((node) => node.id === status?.active_node_id);
-  const filteredNodes = nodes.filter((node) => {
+  const countryOptions = React.useMemo(
+    () =>
+      Array.from(
+        new Map(
+          nodes
+            .filter((node) => node.country || node.country_short)
+            .map((node) => [node.country_short || node.country, `${node.country_short || "XX"} ${node.country}`.trim()])
+        ).entries()
+      ).sort((a, b) => a[1].localeCompare(b[1])),
+    [nodes]
+  );
+  const protoOptions = React.useMemo(
+    () => Array.from(new Set(nodes.map((node) => node.proto).filter(Boolean))).sort(),
+    [nodes]
+  );
+  const summary = React.useMemo(() => {
+    const reachable = nodes.filter((node) => node.status === "available" || node.status === "active").length;
+    const failed = nodes.filter((node) => node.status === "failed").length;
+    const tested = nodes.filter((node) => node.latency_ms !== null || node.status === "failed").length;
+    return { reachable, failed, tested };
+  }, [nodes]);
+  const filteredNodes = React.useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return true;
-    return `${node.id} ${node.country} ${node.country_short} ${node.remote_host} ${node.proto}`
-      .toLowerCase()
-      .includes(q);
-  });
+    const matchesText = (node: Node) => {
+      if (!q) return true;
+      return `${node.id} ${node.country} ${node.country_short} ${node.host_name} ${node.ip} ${node.remote_host} ${node.remote_port} ${node.proto}`
+        .toLowerCase()
+        .includes(q);
+    };
+    const effectiveLatency = (node: Node) => node.latency_ms ?? (node.ping > 0 ? node.ping : null);
+    const list = nodes.filter((node) => {
+      if (!matchesText(node)) return false;
+      if (countryFilter !== "all" && node.country_short !== countryFilter && node.country !== countryFilter) return false;
+      if (protoFilter !== "all" && node.proto !== protoFilter) return false;
+      if (statusFilter !== "all" && node.status !== statusFilter) return false;
+      if (favoriteFilter === "favorites" && !favorites.has(node.id)) return false;
+      if (favoriteFilter === "plain" && favorites.has(node.id)) return false;
+      if (reachabilityFilter === "reachable" && node.status !== "available" && node.status !== "active") return false;
+      if (reachabilityFilter === "untested" && (node.latency_ms !== null || node.status === "failed" || node.status === "available" || node.status === "active")) return false;
+      if (reachabilityFilter === "failed" && node.status !== "failed") return false;
+      if (reachabilityFilter === "fast") {
+        const latency = effectiveLatency(node);
+        if (latency === null || latency > 120) return false;
+      }
+      return true;
+    });
+
+    return [...list].sort((a, b) => {
+      const latencyA = a.latency_ms ?? (a.ping > 0 ? a.ping : Number.MAX_SAFE_INTEGER);
+      const latencyB = b.latency_ms ?? (b.ping > 0 ? b.ping : Number.MAX_SAFE_INTEGER);
+      if (sortMode === "latency") return latencyA - latencyB;
+      if (sortMode === "score") return b.score - a.score;
+      if (sortMode === "speed") return b.speed - a.speed;
+      if (sortMode === "sessions") return a.sessions - b.sessions;
+      if (sortMode === "country") return `${a.country_short}${a.country}`.localeCompare(`${b.country_short}${b.country}`);
+      const statusRank = (node: Node) => (node.status === "active" ? 0 : node.status === "available" ? 1 : node.status === "new" ? 2 : 3);
+      return statusRank(a) - statusRank(b) || latencyA - latencyB || b.score - a.score || a.sessions - b.sessions;
+    });
+  }, [countryFilter, favoriteFilter, favorites, filter, nodes, protoFilter, reachabilityFilter, sortMode, statusFilter]);
 
   function saveToken() {
     localStorage.setItem("vgl_token", token);
@@ -169,12 +238,29 @@ function App() {
 
   async function testNode(id: string) {
     await run(`test:${id}`, async () => {
-      const res = await request<{ result: { message: string } }>("/api/test_node", {
+      const res = await request<{ result: NodeTestResult }>("/api/test_node", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id })
       });
-      setNotice(res.result.message);
+      setNotice(`${res.result.ok ? "Reachable" : "Failed"}: ${res.result.message}`);
+      await loadAll();
+    });
+  }
+
+  async function scanFilteredNodes() {
+    await run("scan", async () => {
+      const ids = filteredNodes.slice(0, scanLimit).map((node) => node.id);
+      if (ids.length === 0) {
+        setNotice("No routes match current filters");
+        return;
+      }
+      const res = await request<{ tested: number; available: number; results: NodeTestResult[] }>("/api/test_nodes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ids })
+      });
+      setNotice(`Scanned ${res.tested} routes, ${res.available} reachable`);
       await loadAll();
     });
   }
@@ -251,12 +337,13 @@ function App() {
         <section className="metrics">
           <Metric icon={<Router />} label="Active Route" value={activeNode?.country_short || status?.active_node_id || "-"} hint={activeNode?.remote_host || "No tunnel selected"} />
           <Metric icon={<Wifi />} label="Relay" value={status?.relay_addr || "-"} hint={relayOk === null ? "Not checked" : relayOk ? "Listening" : "Down"} />
-          <Metric icon={<Server />} label="Routes" value={String(status?.node_count || nodes.length)} hint={`${favorites.size} favorites`} />
+          <Metric icon={<Server />} label="Routes" value={String(status?.node_count || nodes.length)} hint={`${summary.reachable} reachable, ${favorites.size} favorites`} />
           <Metric icon={<Gauge />} label="Exit IP" value={exitIp} hint={notice} />
         </section>
 
         <section className="actions">
           <button className="primary" onClick={refreshRoutes}><RefreshCw size={16} /> Refresh</button>
+          <button onClick={scanFilteredNodes}><CheckCircle2 size={16} /> Scan Visible</button>
           <button onClick={autoConnect}><Play size={16} /> Auto</button>
           <button onClick={checkHealth}><Activity size={16} /> Health</button>
           <button onClick={checkExitIp}><Wifi size={16} /> Exit IP</button>
@@ -267,12 +354,65 @@ function App() {
           </div>
         </section>
 
+        <section className="filters">
+          <Field label="Country">
+            <select value={countryFilter} onChange={(event) => setCountryFilter(event.target.value)}>
+              <option value="all">All countries</option>
+              {countryOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </Field>
+          <Field label="Protocol">
+            <select value={protoFilter} onChange={(event) => setProtoFilter(event.target.value)}>
+              <option value="all">All protocols</option>
+              {protoOptions.map((proto) => <option key={proto} value={proto}>{proto.toUpperCase()}</option>)}
+            </select>
+          </Field>
+          <Field label="Status">
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as NodeStatus | "all")}>
+              <option value="all">All statuses</option>
+              <option value="new">New</option>
+              <option value="available">Available</option>
+              <option value="failed">Failed</option>
+              <option value="active">Active</option>
+            </select>
+          </Field>
+          <Field label="Favorites">
+            <select value={favoriteFilter} onChange={(event) => setFavoriteFilter(event.target.value as FavoriteFilter)}>
+              <option value="all">All routes</option>
+              <option value="favorites">Favorites only</option>
+              <option value="plain">Not favorites</option>
+            </select>
+          </Field>
+          <Field label="Reachability">
+            <select value={reachabilityFilter} onChange={(event) => setReachabilityFilter(event.target.value as ReachabilityFilter)}>
+              <option value="all">Any reachability</option>
+              <option value="reachable">Reachable</option>
+              <option value="untested">Untested</option>
+              <option value="failed">Failed</option>
+              <option value="fast">Fast under 120 ms</option>
+            </select>
+          </Field>
+          <Field label="Sort">
+            <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}>
+              <option value="recommended">Recommended</option>
+              <option value="latency">Latency</option>
+              <option value="score">Score</option>
+              <option value="speed">Speed</option>
+              <option value="sessions">Low load</option>
+              <option value="country">Country</option>
+            </select>
+          </Field>
+          <Field label="Scan limit">
+            <input type="number" min="1" max="200" value={scanLimit} onChange={(event) => setScanLimit(Math.max(1, Math.min(200, Number(event.target.value) || 1)))} />
+          </Field>
+        </section>
+
         <section className="workspace">
           <div className="panel routes">
             <div className="panelHead">
               <div>
                 <h2>Route Catalog</h2>
-                <p>{filteredNodes.length} visible routes</p>
+                <p>{filteredNodes.length} visible routes · {summary.tested} tested · {summary.failed} failed</p>
               </div>
               {busy && <span className="busy"><Loader2 size={15} /> {busy}</span>}
             </div>
@@ -288,6 +428,7 @@ function App() {
                     <th>Proto</th>
                     <th>Latency</th>
                     <th>Score</th>
+                    <th>Speed</th>
                     <th>Load</th>
                     <th>Test</th>
                   </tr>
@@ -307,6 +448,7 @@ function App() {
                       <td>{node.proto}</td>
                       <td>{node.latency_ms ? `${node.latency_ms} ms` : node.ping ? `${node.ping} ms` : "-"}</td>
                       <td>{node.score}</td>
+                      <td>{formatSpeed(node.speed)}</td>
                       <td>{node.sessions}</td>
                       <td><button className="mini ghost" onClick={() => testNode(node.id)}>TCP</button></td>
                     </tr>
@@ -330,7 +472,10 @@ function App() {
                 </select>
               </Field>
               <Field label="Country">
-                <input value={settings.country} onChange={(event) => setSettings({ ...settings, country: event.target.value })} placeholder="JP, US, Japan" />
+                <select value={settings.country || ""} onChange={(event) => setSettings({ ...settings, country: event.target.value })}>
+                  <option value="">Any country</option>
+                  {countryOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
               </Field>
               <Field label="Fixed node">
                 <input value={settings.fixed_node_id} onChange={(event) => setSettings({ ...settings, fixed_node_id: event.target.value })} placeholder="Node ID" />
@@ -381,6 +526,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   );
+}
+
+function formatSpeed(value: number) {
+  if (!value || value <= 0) return "-";
+  const mbps = value / 1_000_000;
+  if (mbps >= 100) return `${Math.round(mbps)} Mbps`;
+  if (mbps >= 1) return `${mbps.toFixed(1)} Mbps`;
+  return `${Math.round(value / 1000)} Kbps`;
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

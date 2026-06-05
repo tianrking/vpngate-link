@@ -121,10 +121,11 @@ sudo grep '^VGL_TOKEN=' /etc/default/vpngate-link
 进入管理网页后：
 
 1. 刷新节点列表。
-2. 按国家、地区、速度、延迟、评分搜索。
-3. 选择一个服务器并连接。
-4. 在网页里查看当前出口 IP。
-5. 把 `127.0.0.1:19080` 配成你的 mieru/hysteria2/sing-box 出站代理。
+2. 按国家、协议、状态、收藏、可达性、延迟、速度、负载、评分筛选。
+3. 点击 **Scan Visible** 对当前筛选出来的节点做真实 TCP 可达性扫描。
+4. 选择一个可达服务器并连接。后端会启动 OpenVPN，隧道就绪后才会标记为 active。
+5. 在网页里查看当前出口 IP。
+6. 把 `127.0.0.1:19080` 配成你的 mieru/hysteria2/sing-box 出站代理。
 
 连接成功后，VPS 本机可用：
 
@@ -163,7 +164,7 @@ https://www.vpngate.net/api/iphone/
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
 | Ubuntu Server deb 包 | 生产可用 | 安装后端、React 管理台、配置文件、systemd 服务，并自动生成 token。 |
-| Web 管理台 | 已实现 | 节点刷新、搜索、连接、断开、收藏、设置、日志、健康检查、出口 IP 检查。 |
+| Web 管理台 | 已实现 | 节点刷新、多维筛选、批量可达性扫描、连接、断开、收藏、设置、日志、健康检查、出口 IP 检查。 |
 | VPNGate 节点目录 | 已实现 | 从 `VGL_CATALOG_URL` 抓取并解析 VPNGate 公开 CSV/OpenVPN 节点目录。 |
 | OpenVPN 管理 | 已实现 | 解码选中节点配置，启动 OpenVPN，等待连接就绪，并保存运行状态。 |
 | 本地 relay | 已实现 | 一个本地端口同时支持 SOCKS5 和 HTTP proxy，默认 `127.0.0.1:19080`。 |
@@ -419,6 +420,7 @@ OPENVPN_AUTH_PASS=vpn
 | `POST` | `/api/settings` | 更新路由和选择设置。 |
 | `POST` | `/api/favorite` | 使用 `{"id":"NODE_ID"}` 切换收藏节点。 |
 | `POST` | `/api/test_node` | 使用 `{"id":"NODE_ID"}` 测试节点 TCP 可达性。 |
+| `POST` | `/api/test_nodes` | 使用 `{"ids":["NODE_ID"]}` 批量测试节点 TCP 可达性；每次最多 200 个 id。 |
 | `POST` | `/api/refresh` | 刷新 VPNGate 节点目录。 |
 | `POST` | `/api/autoconnect` | 根据当前设置自动选择并连接。 |
 | `POST` | `/api/connect` | 使用 `{"id":"NODE_ID"}` 连接指定节点。 |
@@ -434,6 +436,15 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18081/api/logs
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18081/api/exit_ip
 curl -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:18081/api/refresh
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18081/api/nodes
+```
+
+用 API 扫描筛选或指定的节点：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' \
+  -X POST http://127.0.0.1:18081/api/test_nodes \
+  -d '{"ids":["NODE_ID"]}'
 ```
 
 用节点列表里复制的 id 连接：

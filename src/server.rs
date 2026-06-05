@@ -12,8 +12,8 @@ use tower_http::{services::ServeDir, trace::TraceLayer};
 use crate::{
     catalog::fetch_nodes,
     model::{
-        ConnectRequest, FavoriteRequest, GatewaySettings, Node, NodeStatus, NodeTestResult,
-        RouteMode,
+        ConnectRequest, FavoriteRequest, GatewaySettings, Node, NodeStatus, NodeTestBatchRequest,
+        NodeTestResult, RouteMode,
     },
     openvpn::{connect_node, stop_openvpn},
     store::{AppState, save_nodes, save_runtime, save_settings},
@@ -30,6 +30,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/settings", get(settings).post(update_settings))
         .route("/api/favorite", post(toggle_favorite))
         .route("/api/test_node", post(test_node))
+        .route("/api/test_nodes", post(test_nodes))
         .route("/api/refresh", post(refresh))
         .route("/api/autoconnect", post(autoconnect))
         .route("/api/connect", post(connect))
@@ -184,6 +185,30 @@ async fn test_node(
         )
             .into_response(),
     }
+}
+
+async fn test_nodes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<NodeTestBatchRequest>,
+) -> impl IntoResponse {
+    if authorize(&state, &headers).is_err() {
+        return unauthorized_response();
+    }
+    let mut results = Vec::new();
+    for id in payload.ids.iter().take(200) {
+        if let Some(result) = do_test_node(&state, id).await {
+            results.push(result);
+        }
+    }
+    let available = results.iter().filter(|result| result.ok).count();
+    Json(json!({
+        "ok": true,
+        "tested": results.len(),
+        "available": available,
+        "results": results
+    }))
+    .into_response()
 }
 
 async fn autoconnect(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {

@@ -121,10 +121,11 @@ sudo grep '^VGL_TOKEN=' /etc/default/vpngate-link
 In the web console:
 
 1. Refresh the node list.
-2. Search by country, region, speed, ping, or score.
-3. Pick a server and click connect.
-4. Check the exit IP in the console.
-5. Use `127.0.0.1:19080` as the upstream HTTP/SOCKS5 relay for your local relay service.
+2. Filter by country, protocol, status, favorites, reachability, latency, speed, load, or score.
+3. Click **Scan Visible** to run real TCP reachability tests for the currently filtered nodes.
+4. Pick a reachable server and click connect. The backend starts OpenVPN and only marks the node active after the tunnel is ready.
+5. Check the exit IP in the console.
+6. Use `127.0.0.1:19080` as the upstream HTTP/SOCKS5 relay for your local relay service.
 
 Once connected, the VPS exposes:
 
@@ -162,7 +163,7 @@ Ubuntu Server is the production target because it provides the Linux networking 
 | Area | Status | Notes |
 | --- | --- | --- |
 | Ubuntu Server deb package | Production | Installs backend, React console, config, systemd service, and token generation. |
-| Web console | Implemented | Node refresh, search, connect, disconnect, favorites, settings, logs, health, and exit IP checks. |
+| Web console | Implemented | Node refresh, multidimensional filters, batch reachability scanning, connect, disconnect, favorites, settings, logs, health, and exit IP checks. |
 | VPNGate catalog | Implemented | Fetches and parses the public VPNGate CSV/OpenVPN catalog from `VGL_CATALOG_URL`. |
 | OpenVPN management | Implemented | Decodes selected node config, starts OpenVPN, waits for readiness, and stores runtime state. |
 | Local relay | Implemented | One local port supports SOCKS5 and HTTP proxy traffic on `127.0.0.1:19080`. |
@@ -418,6 +419,7 @@ Control API surface:
 | `POST` | `/api/settings` | Update routing and selection settings. |
 | `POST` | `/api/favorite` | Toggle a node in the favorite list with `{"id":"NODE_ID"}`. |
 | `POST` | `/api/test_node` | TCP reachability test for a node with `{"id":"NODE_ID"}`. |
+| `POST` | `/api/test_nodes` | Batch TCP reachability scan with `{"ids":["NODE_ID"]}`; capped at 200 ids per request. |
 | `POST` | `/api/refresh` | Refresh the VPNGate catalog. |
 | `POST` | `/api/autoconnect` | Select and connect using current settings. |
 | `POST` | `/api/connect` | Connect a specific node with `{"id":"NODE_ID"}`. |
@@ -433,6 +435,15 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18081/api/logs
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18081/api/exit_ip
 curl -H "Authorization: Bearer $TOKEN" -X POST http://127.0.0.1:18081/api/refresh
 curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18081/api/nodes
+```
+
+Scan filtered or selected nodes from the API:
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' \
+  -X POST http://127.0.0.1:18081/api/test_nodes \
+  -d '{"ids":["NODE_ID"]}'
 ```
 
 Connect using a node id copied from the node list:

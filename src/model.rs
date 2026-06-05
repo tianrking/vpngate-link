@@ -63,6 +63,11 @@ pub struct ConnectRequest {
     pub id: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct NodeTestBatchRequest {
+    pub ids: Vec<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GatewaySettings {
     pub connection_enabled: bool,
