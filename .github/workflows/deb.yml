@@ -1,0 +1,356 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  DEBIAN_FRONTEND: noninteractive
+
+jobs:
+  quality:
+    name: quality / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-22.04
+          - ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ca-certificates curl openvpn iproute2 iptables
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+      - name: Check Rust
+        run: cargo check --locked
+
+      - name: Lint Rust
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test Rust
+        run: cargo test --locked
+
+  package:
+    name: package / ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    needs: quality
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential ca-certificates curl dpkg-dev openvpn iproute2 iptables
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build Debian package
+        run: ARCH=${{ matrix.arch }} bash scripts/package-deb.sh
+
+      - name: Inspect package
+        run: |
+          ls -lah target/deb
+          dpkg-deb --info target/deb/vpngate-link_${{ matrix.arch }}.deb
+          dpkg-deb --contents target/deb/vpngate-link_${{ matrix.arch }}.deb | grep -E 'vpngate-link$|/web/index.html|vpngate-link.service|/etc/default/vpngate-link'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: |
+            target/deb/vpngate-link_*_${{ matrix.arch }}.deb
+            target/deb/vpngate-link_${{ matrix.arch }}.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  install-test:
+    name: install-test / ${{ matrix.arch }} / ubuntu-${{ matrix.ubuntu }}
+    runs-on: ${{ matrix.runner }}
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-22.04
+            ubuntu: "22.04"
+          - arch: amd64
+            runner: ubuntu-22.04
+            ubuntu: "24.04"
+          - arch: amd64
+            runner: ubuntu-22.04
+            ubuntu: "26.04"
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            ubuntu: "22.04"
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            ubuntu: "24.04"
+          - arch: arm64
+            runner: ubuntu-22.04-arm
+            ubuntu: "26.04"
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist
+
+      - name: Install package in Ubuntu container
+        run: |
+          set -euxo pipefail
+          test -f "dist/vpngate-link_${{ matrix.arch }}.deb"
+          docker version
+          docker run --rm \
+            -v "$PWD/dist:/pkg:ro" \
+            "ubuntu:${{ matrix.ubuntu }}" \
+            bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y ca-certificates curl
+              apt-get install -y /pkg/vpngate-link_${{ matrix.arch }}.deb
+
+              test -x /opt/vpngate-link/vpngate-link
+              test -f /opt/vpngate-link/web/index.html
+              test -f /lib/systemd/system/vpngate-link.service
+              grep -q "^VGL_WEB_DIR=/opt/vpngate-link/web" /etc/default/vpngate-link
+
+              TOKEN="$(grep "^VGL_TOKEN=" /etc/default/vpngate-link | cut -d= -f2-)"
+              test -n "$TOKEN"
+              test "$TOKEN" != "__GENERATE_ON_INSTALL__"
+
+              VGL_CONTROL=127.0.0.1:18081 \
+              VGL_RELAY=127.0.0.1:19080 \
+              VGL_DATA_DIR=/tmp/vgl-data \
+              VGL_WEB_DIR=/opt/vpngate-link/web \
+              VGL_TOKEN="$TOKEN" \
+              VGL_REFRESH_SECONDS=86400 \
+              /opt/vpngate-link/vpngate-link > /tmp/vpngate-link.log 2>&1 &
+              PID="$!"
+
+              for _ in $(seq 1 40); do
+                if curl -fsS -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18081/api/status > /tmp/status.json; then
+                  cat /tmp/status.json
+                  kill "$PID"
+                  wait "$PID" || true
+                  exit 0
+                fi
+                sleep 0.25
+              done
+
+              cat /tmp/vpngate-link.log
+              kill "$PID" || true
+              exit 1
+            '
+
+  windows-quality:
+    name: windows-quality / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - windows-2022
+          - windows-2025
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        working-directory: web
+        shell: pwsh
+        run: |
+          npm ci
+          npm run build
+
+      - name: Check Rust
+        run: cargo check --locked
+
+      - name: Test Rust
+        run: cargo test --locked
+
+  package-windows:
+    name: package / windows-x64
+    runs-on: windows-2022
+    needs: windows-quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build Windows package
+        shell: pwsh
+        run: ./scripts/package-windows.ps1 -Arch x64
+
+      - name: Inspect package
+        shell: pwsh
+        run: |
+          Get-ChildItem target/windows
+          $Zip = "target/windows/vpngate-link-windows-x64.zip"
+          if (!(Test-Path $Zip)) { throw "missing $Zip" }
+          Expand-Archive -Path $Zip -DestinationPath target/windows/inspect -Force
+          foreach ($Path in @(
+            "target/windows/inspect/vpngate-link.exe",
+            "target/windows/inspect/web/index.html",
+            "target/windows/inspect/vpngate-link.env",
+            "target/windows/inspect/run.ps1",
+            "target/windows/inspect/install-startup-task.ps1",
+            "target/windows/inspect/uninstall-startup-task.ps1"
+          )) {
+            if (!(Test-Path $Path)) { throw "missing $Path" }
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: target/windows/vpngate-link-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-install-test:
+    name: windows-install-test / ${{ matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    needs: package-windows
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - windows-2022
+          - windows-2025
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: dist
+
+      - name: Run packaged app smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          Expand-Archive -Path "dist/vpngate-link-windows-x64.zip" -DestinationPath "dist/app" -Force
+          $Root = Resolve-Path "dist/app"
+          $EnvFile = Join-Path $Root "vpngate-link.env"
+          Set-Content -Path $EnvFile -Encoding ascii -Value @(
+            "VGL_CONTROL=127.0.0.1:18086",
+            "VGL_RELAY=127.0.0.1:19086",
+            "VGL_DATA_DIR=.\data",
+            "VGL_WEB_DIR=.\web",
+            "VGL_TUN=vgl0",
+            "VGL_TOKEN=windows-smoke-token",
+            "VGL_REFRESH_SECONDS=86400",
+            "VGL_MAX_NODES=10",
+            "VGL_CATALOG_URL=https://www.vpngate.net/api/iphone/",
+            "OPENVPN_CMD=openvpn.exe",
+            "OPENVPN_AUTH_USER=vpn",
+            "OPENVPN_AUTH_PASS=vpn"
+          )
+
+          $RunScript = Join-Path $Root "run.ps1"
+          $Process = Start-Process `
+            -FilePath "powershell.exe" `
+            -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $RunScript) `
+            -WorkingDirectory $Root `
+            -PassThru `
+            -RedirectStandardOutput (Join-Path $Root "stdout.log") `
+            -RedirectStandardError (Join-Path $Root "stderr.log")
+
+          try {
+            $Headers = @{ Authorization = "Bearer windows-smoke-token" }
+            for ($i = 0; $i -lt 60; $i++) {
+              try {
+                $Status = Invoke-RestMethod -Headers $Headers -Uri "http://127.0.0.1:18086/api/status" -TimeoutSec 2
+                $Status | ConvertTo-Json -Depth 4
+                if ($Status.auth_enabled -ne $true) { throw "auth was not enabled" }
+                exit 0
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            Get-Content (Join-Path $Root "stdout.log") -ErrorAction SilentlyContinue
+            Get-Content (Join-Path $Root "stderr.log") -ErrorAction SilentlyContinue
+            throw "Windows package smoke test timed out"
+          } finally {
+            if (!$Process.HasExited) {
+              Stop-Process -Id $Process.Id -Force
+            }
+          }
+
+  release:
+    name: release
+    runs-on: ubuntu-22.04
+    needs:
+      - package
+      - install-test
+      - package-windows
+      - windows-install-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/*.deb
+            dist/*.zip
