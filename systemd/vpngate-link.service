@@ -1,0 +1,15 @@
+[Unit]
+Description=VPNGate Link
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/vpngate-link
+ExecStart=/opt/vpngate-link/vpngate-link
+Restart=always
+RestartSec=5
+EnvironmentFile=-/etc/default/vpngate-link
+
+[Install]
+WantedBy=multi-user.target
