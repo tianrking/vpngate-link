@@ -244,6 +244,9 @@ fn bind_to_device(socket: &socket2::Socket, dev: &str) -> io::Result<()> {
     }
     let dev = CString::new(dev)?;
     let bytes = dev.as_bytes_with_nul();
+    // SAFETY: the file descriptor is owned by `socket`, the option buffer points to a
+    // NUL-terminated interface name that remains alive for the syscall, and the length
+    // matches the provided buffer.
     let rc = unsafe {
         libc::setsockopt(
             socket.as_raw_fd(),
