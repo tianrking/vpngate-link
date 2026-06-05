@@ -11,7 +11,7 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 
-REPO="${VGL_REPO:-YOUR_GITHUB_USER/vpngate-link}"
+REPO="${VGL_REPO:-tianrking/vpngate-link}"
 VERSION="${VGL_VERSION:-latest}"
 ARCH="$(dpkg --print-architecture)"
 case "$ARCH" in

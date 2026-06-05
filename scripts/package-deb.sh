@@ -62,7 +62,7 @@ Version: ${VERSION}
 Section: net
 Priority: optional
 Architecture: ${ARCH}
-Maintainer: VPNGate Link Maintainers <root@localhost>
+Maintainer: VPNGate Link Maintainers <10758833+tianrking@users.noreply.github.com>
 Depends: openvpn, iproute2, iptables, ca-certificates, curl
 Description: VPNGate public-node link for relay servers
  VPNGate Link provides a local HTTP/SOCKS5 relay and control UI for

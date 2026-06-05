@@ -37,7 +37,7 @@ cd "$ROOT_DIR"
 echo "Building React management console..."
 (cd "$ROOT_DIR/web" && npm install && npm run build)
 
-echo "Building Rust gateway..."
+echo "Building VPNGate Link backend..."
 cargo build --release
 
 install -d "$INSTALL_DIR"
