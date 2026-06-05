@@ -196,10 +196,10 @@ fn split_host_port(value: &str, default_port: u16) -> anyhow::Result<(String, u1
             .unwrap_or(default_port);
         return Ok((host, port));
     }
-    if let Some((host, port)) = value.rsplit_once(':') {
-        if let Ok(port) = port.parse() {
-            return Ok((host.to_string(), port));
-        }
+    if let Some((host, port)) = value.rsplit_once(':')
+        && let Ok(port) = port.parse()
+    {
+        return Ok((host.to_string(), port));
     }
     Ok((value.to_string(), default_port))
 }

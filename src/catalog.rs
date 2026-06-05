@@ -77,10 +77,10 @@ pub fn parse_catalog_csv(text: &str, max_nodes: usize) -> anyhow::Result<Vec<Nod
     if lines.is_empty() {
         bail!("upstream catalog returned an empty list");
     }
-    if let Some(first) = lines.first_mut() {
-        if first.starts_with('#') {
-            *first = first.trim_start_matches('#').to_string();
-        }
+    if let Some(first) = lines.first_mut()
+        && first.starts_with('#')
+    {
+        *first = first.trim_start_matches('#').to_string();
     }
 
     let csv_text = lines.join("\n");
