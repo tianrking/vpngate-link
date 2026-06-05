@@ -58,7 +58,20 @@ jobs:
         run: cargo check --locked
 
       - name: Lint Rust
-        run: cargo clippy --locked --all-targets -- -D warnings
+        run: |
+          set +e
+          cargo clippy --locked --all-targets -- -D warnings 2>&1 | tee /tmp/vpngate-link-clippy.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            python3 - <<'PY'
+          from pathlib import Path
+
+          text = "\n".join(Path("/tmp/vpngate-link-clippy.log").read_text(errors="replace").splitlines()[-80:])
+          text = text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+          print(f"::error title=Rust clippy failed::{text}")
+          PY
+            exit "$status"
+          fi
 
       - name: Test Rust
         run: cargo test --locked
