@@ -45,7 +45,7 @@ Copy-Item (Join-Path $Root "packaging/windows/vpngate-link.env") (Join-Path $Pac
 Copy-Item (Join-Path $Root "scripts/windows/run.ps1") (Join-Path $PackageDir "run.ps1")
 Copy-Item (Join-Path $Root "scripts/windows/install-startup-task.ps1") (Join-Path $PackageDir "install-startup-task.ps1")
 Copy-Item (Join-Path $Root "scripts/windows/uninstall-startup-task.ps1") (Join-Path $PackageDir "uninstall-startup-task.ps1")
-Copy-Item -Recurse (Join-Path $Root "web/dist/.") (Join-Path $PackageDir "web")
+Copy-Item -Recurse -Force -Path (Join-Path $Root "web/dist/*") -Destination (Join-Path $PackageDir "web")
 
 Remove-Item -Force $ZipPath -ErrorAction SilentlyContinue
 Compress-Archive -Path (Join-Path $PackageDir "*") -DestinationPath $ZipPath

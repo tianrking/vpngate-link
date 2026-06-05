@@ -260,6 +260,7 @@ jobs:
           $Zip = "target/windows/vpngate-link-windows-x64.zip"
           if (!(Test-Path $Zip)) { throw "missing $Zip" }
           Expand-Archive -Path $Zip -DestinationPath target/windows/inspect -Force
+          Get-ChildItem target/windows/inspect -Recurse | Select-Object FullName, Length
           foreach ($Path in @(
             "target/windows/inspect/vpngate-link.exe",
             "target/windows/inspect/web/index.html",
